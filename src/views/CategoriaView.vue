@@ -5,20 +5,21 @@
       <div class="cat-sidebar">
         <div class="cat-inner-sidebar">
           <div class="cat-group">
-            <a class="cat-group-title">CATEGORÍA <span>–</span></a>
+            <!-- Las categorías se cargan desde Laravel y filtran el catálogo. -->
+            <a class="cat-group-title" @click="seleccionarCategoria(null)">TODAS LAS CATEGORÍAS</a>
             <div class="cat-sub">
-              <a v-for="n in 5" :key="n">Subcategoria</a>
+              <a
+                v-for="categoria in categorias"
+                :key="categoria.id"
+                :class="{activa: categoriaSeleccionada === categoria.id}"
+                @click="seleccionarCategoria(categoria.id)"
+              >{{ categoria.nombre }}</a>
             </div>
           </div>
-          <div class="cat-group"><a class="cat-group-title">CATEGORÍA <span>+</span></a></div>
-          <div class="cat-group"><a class="cat-group-title">CATEGORÍA</a></div>
-          <div class="cat-group"><a class="cat-group-title">CATEGORÍA <span>+</span></a></div>
-          <div class="cat-group"><a class="cat-group-title">CATEGORÍA</a></div>
-          <div class="cat-group"><a class="cat-group-title">CATEGORÍA <span>+</span></a></div>
           <div class="filter-box">
             <h4>Filtrar por precio</h4>
-            <input type="range" min="290" max="3500" v-model="filtroPrecio">
-            <div class="price-label">Precio: 290$ – {{filtroPrecio}}$</div>
+            <input type="range" min="0" :max="precioMaximo" v-model.number="filtroPrecio">
+            <div class="price-label">Precio: 0$ – {{ filtroPrecio }}$</div>
           </div>
         </div>
       </div>
@@ -31,14 +32,12 @@
             <option value="vendidos">Más vendidos</option>
           </select>
         </div>
-        <div class="cat-grid">
+        <p v-if="cargando" class="producto-vacio">Cargando productos...</p>
+        <p v-else-if="error" class="producto-error">{{ error }}</p>
+        <div v-else class="cat-grid">
           <cat-card v-for="producto in itemsGrilla" :key="producto.uid" :product="producto"></cat-card>
         </div>
-        <div class="pagination">
-          <button class="arrow-btn">‹</button>
-          <button v-for="n in 4" :key="n" :class="{active: n===1}">{{n}}</button>
-          <button class="arrow-btn">›</button>
-        </div>
+        <p v-if="!cargando && !error && !itemsGrilla.length" class="producto-vacio">No hay productos para estos filtros.</p>
       </div>
     </div>
   </div>
@@ -47,7 +46,7 @@
 <script>
 import StoreHeader from '../components/StoreHeader.vue';
 import CatCard from '../components/CatCard.vue';
-import { CATALOGO } from '../catalog.js';
+import api from '../Api/api.js';
 
 export default {
   name: 'CategoriaView',
@@ -55,18 +54,62 @@ export default {
   data() {
     return {
       filtroPrecio: 4000,
-      ordenarPor: 'menor'
+      ordenarPor: 'menor',
+      // Datos reales del catálogo público.
+      productos: [],
+      categorias: [],
+      categoriaSeleccionada: null,
+      cargando: false,
+      error: ''
     };
   },
   computed: {
+    precioMaximo() {
+      const precios = this.productos.map(producto => Number(producto.precio_venta) || 0);
+      return Math.max(4000, ...precios);
+    },
     itemsGrilla() {
-      const out = [];
-      for (let i = 0; i < 16; i++) {
-        const producto = Object.assign({}, CATALOGO[i % CATALOGO.length]);
-        producto.uid = 'g' + i;
-        out.push(producto);
-      }
-      return out;
+      return this.productos
+        .filter(producto => {
+          const pertenece = !this.categoriaSeleccionada || producto.categorias?.some(
+            categoria => categoria.id === this.categoriaSeleccionada
+          );
+          return pertenece && Number(producto.precio_venta) <= this.filtroPrecio;
+        })
+        .sort((a, b) => {
+          const precioA = Number(a.precio_venta) || 0;
+          const precioB = Number(b.precio_venta) || 0;
+          return this.ordenarPor === 'mayor' ? precioB - precioA : precioA - precioB;
+        })
+        .map(producto => ({
+          ...producto,
+          uid: producto.id,
+          name: producto.nombre,
+          price: Number(producto.precio_venta) || 0
+        }));
+    }
+  },
+  async mounted() {
+    this.cargando = true;
+    try {
+      // Carga productos con sus categorías para evitar datos de prueba.
+      const [productos, categorias] = await Promise.all([
+        api.get('/productos'),
+        api.get('/categorias')
+      ]);
+      this.productos = productos.data;
+      this.categorias = categorias.data;
+      this.filtroPrecio = this.precioMaximo;
+    } catch (requestError) {
+      console.error('Error al cargar el catálogo:', requestError);
+      this.error = 'No se pudieron cargar los productos.';
+    } finally {
+      this.cargando = false;
+    }
+  },
+  methods: {
+    seleccionarCategoria(id) {
+      this.categoriaSeleccionada = id;
     }
   }
 };

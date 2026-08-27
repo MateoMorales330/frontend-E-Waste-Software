@@ -19,7 +19,9 @@
                 :title="seleccionados.length ? 'Duplicar seleccionados' : 'Seleccioná al menos un producto'"
                 @click="duplicarSeleccionados"
               >📄</button>
-              <button type="button" title="Agregar producto" @click="abrirParaCrear">＋</button>
+              <button type="button" title="Agregar producto" @click="abrirParaCrear">＋ Añadir productos</button>
+              <!-- Abre el formulario para crear una categoría sin salir de productos. -->
+              <button type="button" title="Crear categoría" @click="abrirParaCrearCategoria">＋ Categoría</button>
             </div>
             <div class="select-all">
               <label>
@@ -38,7 +40,8 @@
           <p v-if="cargando" class="producto-vacio" aria-live="polite">Cargando productos…</p>
 
           <div class="admin-row" v-for="producto in productos" :key="producto.id">
-            <a class="administrar" @click="abrirParaEditar(producto)">Administrar</a>
+            <!-- Permite editar todos los datos del producto seleccionado. -->
+            <a class="administrar" @click="abrirParaEditar(producto)">Editar</a>
             <div class="col">{{ producto.nombre }}<br>{{ formatearPrecio(producto.precio_venta) }}</div>
             <div class="col">{{ producto.categorias?.[0]?.nombre || 'Sin categoría' }}</div>
             <div class="col">{{ producto.stock }}</div>
@@ -108,6 +111,32 @@
         </form>
       </div>
     </div>
+
+    <!-- Formulario independiente para guardar categorías en el backend. -->
+    <div class="modal-overlay" :class="{open: mostrarCategoriaFormulario}">
+        <div class="modal-box">
+          <button class="modal-close" type="button" @click="cerrarFormularioCategoria">✕</button>
+          <h2>Nueva categoría</h2>
+          <form @submit.prevent="crearCategoria">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="categoria-nombre">Nombre</label>
+                <input id="categoria-nombre" v-model.trim="formularioCategoria.nombre" type="text" required maxlength="255">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="categoria-descripcion">Descripción</label>
+                <textarea id="categoria-descripcion" v-model.trim="formularioCategoria.descripcion" rows="3"></textarea>
+              </div>
+            </div>
+            <p v-if="errorCategoria" class="auth-error">{{ errorCategoria }}</p>
+            <button class="modal-btn" type="submit" :disabled="guardandoCategoria">
+              {{ guardandoCategoria ? 'Guardando...' : 'Crear categoría' }}
+            </button>
+          </form>
+        </div>
+      </div>
   </div>
 </template>
 
@@ -127,6 +156,11 @@ const PRODUCTO_VACIO = {
   categoria_id: null
 };
 
+const CATEGORIA_VACIA = {
+  nombre: '',
+  descripcion: ''
+};
+
 export default {
   name: 'AdminProductosView',
   components: { AdminTopbar, AdminSidebar },
@@ -143,7 +177,12 @@ export default {
       editandoId: null,    // null = creando uno nuevo; si no, id del que se edita
       guardando: false,
       errorFormulario: '',
-      formulario: { ...PRODUCTO_VACIO }
+      formulario: { ...PRODUCTO_VACIO },
+      // Estado del modal y del envío de una nueva categoría.
+      mostrarCategoriaFormulario: false,
+      guardandoCategoria: false,
+      errorCategoria: '',
+      formularioCategoria: { ...CATEGORIA_VACIA }
     };
   },
   computed: {
@@ -209,6 +248,30 @@ export default {
     },
     cerrarFormulario() {
       this.mostrarFormulario = false;
+    },
+    // Reinicia y muestra el formulario de creación de categorías.
+    abrirParaCrearCategoria() {
+      this.errorCategoria = '';
+      this.formularioCategoria = { ...CATEGORIA_VACIA };
+      this.mostrarCategoriaFormulario = true;
+    },
+    cerrarFormularioCategoria() {
+      this.mostrarCategoriaFormulario = false;
+    },
+    // Guarda la categoría y la agrega al selector de productos.
+    async crearCategoria() {
+      this.guardandoCategoria = true;
+      this.errorCategoria = '';
+      try {
+        const response = await api.post('/categorias', this.formularioCategoria);
+        this.categorias.push(response.data);
+        this.cerrarFormularioCategoria();
+      } catch (requestError) {
+        console.error('Error al crear categoría:', requestError);
+        this.errorCategoria = requestError.response?.data?.message || 'No se pudo crear la categoría.';
+      } finally {
+        this.guardandoCategoria = false;
+      }
     },
     async guardarProducto() {
       this.guardando = true;
